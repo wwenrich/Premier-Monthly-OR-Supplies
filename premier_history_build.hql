@@ -1,5 +1,4 @@
-
---set hive.execution.engine=mr; 
+ 
 
 --Staging table 
 DROP TABLE IF EXISTS premier_extracts.premier_supply;
@@ -18,7 +17,7 @@ SELECT distinct
            when os.prim_locn in ('GLH','GECL') then '730455'
            when os.prim_locn = 'GCMC' then 'PA0030'
            when os.prim_locn in ('GWV','GSWB') then 'PA2003'           
-           else 'PA0024'        end as entity       
+           else 'PA0024'        end as entity      
       ,os.pat_mrn_id AS mrn
       ,coalesce(cast(pe.hsp_account_id as string),cast(os.hosp_enc_csn_id as string)) as acct_nbr
       ,os.log_id as surgical_log_id
@@ -27,7 +26,7 @@ SELECT distinct
       ,regexp_replace(csi.prov_name,',',' ') as SurgeonName
       --USED TO CONTROL 1 SET OF IMPLANTS WHEN THERE ARE MULTIPLE PROCEDURES ON AN ENCOUNTER
       ,regexp_replace(os.proc_display_name,',',' ') as  primary_surg_proc_desc
-      ,sply.supply_id as mmisitemnumber 
+      ,sply.supply_id as mmisitemnumber      
       ,regexp_replace(cast(sply.man_ctlg_num as string),',',' ') as manufact_ctlg_nbr
       ,regexp_replace(sply.manufacturer_name,',',' ') as manufacturer
       --
@@ -66,13 +65,13 @@ left join current_epic_prod.or_sply_comments cmts on cmts.item_id = sply.supply_
                                                  and cmts.line = '1'
 left join current_epic_prod.or_sply orsply on orsply.supply_id = sply.supply_id                                      
 left join current_epic_prod.zc_or_asa_rating zc on zc.asa_rating_c = ol.asa_rating_c
-where substr(cast(add_months(FROM_UNIXTIME( UNIX_TIMESTAMP() ),-1) as string),1,7)  = substr(cast(os.surgery_date as string),1,7)
-  and (coalesce(orsply.reusable_yn,'Y') = 'Y' or sply.implant_action_nm = 'Implanted'); 
+where coalesce(orsply.reusable_yn,'Y') = 'Y' 
+   or sply.implant_action_nm = 'Implanted'; 
   
 
  
 ANALYZE TABLE premier_extracts.premier_supply COMPUTE STATISTICS;  
-ANALYZE TABLE premier_extracts.premier_supply COMPUTE STATISTICS FOR COLUMNS;  
+ANALYZE TABLE premier_extracts.premier_supply COMPUTE STATISTICS FOR COLUMNS; 
 
 
 ----------------------------------------------------------------------------------------------------------------
@@ -133,8 +132,8 @@ having count(*) > 1;
 ----------------------------------------------------------------------------------------
 --Creation of partitioned table by Facility & year-month
 
-DROP TABLE IF EXISTS premier_extracts.premier_supply_part_all;
-CREATE TABLE premier_extracts.premier_supply_part_all
+DROP TABLE IF EXISTS premier_extracts.premier_supply_part_history;
+CREATE TABLE premier_extracts.premier_supply_part_history
 (FacilityName string
 ,Department string
 ,SourceName string
@@ -169,7 +168,7 @@ CREATE TABLE premier_extracts.premier_supply_part_all
 
 
 
-insert overwrite table premier_extracts.premier_supply_part_all
+insert overwrite table premier_extracts.premier_supply_part_history
 select distinct
  facility as FacilityName
 ,department as Department
@@ -213,8 +212,8 @@ left join premier_extracts.tmp_times ttout on ttout.log_id = pe.surgical_log_id
 where pe.surgical_log_id in (select surgical_log_id from premier_extracts.tmp_supply); 
 
 
-analyze table premier_extracts.premier_supply_part_all  compute statistics;
-analyze table premier_extracts.premier_supply_part_all  compute statistics for columns;
+analyze table premier_extracts.premier_supply_part_history  compute statistics;
+analyze table premier_extracts.premier_supply_part_history  compute statistics for columns;
 
               
 
@@ -230,7 +229,7 @@ select substr(cast(add_months(FROM_UNIXTIME( UNIX_TIMESTAMP() ),-1) as string),1
 drop table if exists premier_extracts.premier_SLA_header;
 create table premier_extracts.premier_SLA_header as 
 select * 
-from premier_extracts.premier_supply_part_all
+from premier_extracts.premier_supply_part_history
 limit 0;
 
 insert into table premier_extracts.premier_SLA_header
@@ -245,7 +244,7 @@ values ('FacilityName','Department','SourceName','EntityCodeSA'
 
 
 -------------------------------------------------------------------------
---Create monthly files
+
 --Facility                                     entity code SA
 --HOLY SPIRIT HOSPITAL OF THE SISTERS OF CHRISTIAN	653362
 --GEISINGER BLOOMSBURG HOSPITAL						709177
@@ -254,51 +253,5 @@ values ('FacilityName','Department','SourceName','EntityCodeSA'
 --GEISINGER COMMUNITY MEDICAL CENTER				PA0030
 --GEISINGER WYOMING VALLEY MEDICAL CENTER			PA2003
 
---Holy Spirit (653362)
-DROP TABLE IF EXISTS premier_extracts.epic_653362_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_653362_${hivevar:vardate} as
-select * 
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = '653362';
-
-
---BLOOMSBURG HOSPITAL (709177)
-DROP TABLE IF EXISTS premier_extracts.epic_709177_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_709177_${hivevar:vardate} as
-select * 
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = '709177';
-
-
---LEWISTOWN HOSPITAL (730455)
-DROP TABLE IF EXISTS premier_extracts.epic_730455_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_730455_${hivevar:vardate} as
-select * 
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = '730455';
-
-
---GEISINGER MEDICAL CENTER (PA0024)
-DROP TABLE IF EXISTS premier_extracts.epic_PA0024_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_PA0024_${hivevar:vardate} as
-select * 
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = 'PA0024';
-
-
---GEISINGER COMMUNITY MEDICAL CENTER (PA0030)
-DROP TABLE IF EXISTS premier_extracts.epic_PA0030_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_PA0030_${hivevar:vardate} as
-select * 
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = 'PA0030';
-
-
---GEISINGER WYOMING VALLEY MEDICAL CENTER (PA2003)
-DROP TABLE IF EXISTS premier_extracts.epic_PA2003_${hivevar:vardate};
-CREATE TABLE premier_extracts.epic_PA2003_${hivevar:vardate} as
-select *  
-from premier_extracts.premier_supply_part_all pa 
-where pa.entitycodesa = 'PA2003';
 
 ------------------------------------------------------------------
